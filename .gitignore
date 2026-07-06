@@ -1,0 +1,12 @@
+# Raw survey data & PII — never push to GitHub
+*.csv
+*.dta
+*.xlsx
+*.xls
+
+# Reference / working files
+template.html
+
+# OS junk
+Thumbs.db
+Desktop.ini
