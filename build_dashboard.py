@@ -33,6 +33,68 @@ OUT_PATH = HERE / "index.html"
 
 MISSING_CODES = {97, 98, 99, 666, 777, 888, 999}   # excluded from scale means
 
+# Concise labels for charts — long survey wordings shortened so they render
+# fully on the axis without being clipped. Keyed by the exact English label.
+SHORT_LABELS = {
+    "Refused to answer": "Refused",
+    "Don't know how it was decided": "Don't know",
+    # digital access
+    "ePay Punjab (online payments)": "ePay Punjab",
+    "Punjab Land Records / Online Fard / Punjab-Zameen": "Punjab Land Records / Fard",
+    "Pakistan Citizen Portal (complaints)": "Pakistan Citizen Portal",
+    "e-Khidmat Markaz / online appointment/services": "e-Khidmat Markaz",
+    "Do not trust them / fear mistakes": "Don't trust / fear mistakes",
+    "Hard to use / language issues": "Hard to use / language",
+    "No smartphone or no internet": "No smartphone / internet",
+    "Prefer in-person / agent handles it": "Prefer in-person / agent",
+    "Fear it creates extra problems with government": "Fear extra govt problems",
+    "Shopkeeper/agent/intermediary": "Shopkeeper / agent",
+    # records
+    "Inspector visited and measured": "Inspector measured",
+    "Decided at the office/desk": "Decided at office/desk",
+    "Visit office and appeal": "Visit office & appeal",
+    "Jointly owned / shared title": "Jointly owned",
+    "In another (family) member's name (transfer/intiqal not done)": "In family member's name",
+    "Ownership is disputed / under litigation": "Disputed / litigation",
+    "No formal ownership record exists": "No formal record",
+    "Don't know how to appeal": "Don't know how",
+    "Improve government revenue": "Improve revenue",
+    "Correct errors in records": "Correct errors",
+    "Target corruption/underreporting": "Target corruption",
+    # E&T
+    "Both / multiple contacts": "Both",
+    "Higher-value properties": "Higher-value",
+    "Lower-value properties": "Lower-value",
+    "Suspected underreporting": "Suspected under-reporting",
+    "Properties with arrears": "With arrears",
+    "Newly built properties": "Newly built",
+    "Definitely the businessman": "Definitely businessman",
+    "Probably the businessman": "Probably businessman",
+    "Equally likely from both": "Equally likely",
+    "Probably the retired teacher": "Probably teacher",
+    "Definitely the retired teacher": "Definitely teacher",
+    "Measurement differences are a much bigger reason": "Measurement differences",
+    "Both are equally important": "Both equally",
+    "Connections / informal payments are a much bigger reason": "Connections / payments",
+    # RS technology
+    "Can't see inside the house": "Can't see inside",
+    "Can't negotiate / explain": "Can't negotiate / explain",
+    "No human involved": "No human involved",
+    "Inspector makes many more mistakes": "Inspector: many more",
+    "Inspector somewhat more": "Inspector: somewhat more",
+    "Computer somewhat more": "Computer: somewhat more",
+    "Computer makes many more mistakes": "Computer: many more",
+    "Bigger than they really are": "Bigger than reality",
+    "Smaller than they really are": "Smaller than reality",
+    "Much more confident": "Much more confident",
+    "Somewhat more confident": "Somewhat more",
+    "Still would not be confident": "Still not confident",
+}
+
+
+def short(lab):
+    return SHORT_LABELS.get(lab, lab)
+
 
 # ----------------------------------------------------------------------
 #  Load
@@ -90,24 +152,29 @@ def dist(frame, col, labels, order_by_choices=True, drop_missing_codes=False):
     for k in keys:
         n = int(counts.get(k, 0))
         if n:
-            out.append({"label": str(lmap.get(k, k)), "value": n})
+            out.append({"label": short(str(lmap.get(k, k))), "value": n})
     # any codes not in the choice list
     for k in counts.index:
         if k not in lmap:
-            out.append({"label": str(k), "value": int(counts[k])})
+            out.append({"label": short(str(k)), "value": int(counts[k])})
     return out
 
 
-def multi(frame, base, labels):
-    """[{label, value}] for a select_multiple's dummy columns, desc by count."""
+def multi(frame, base, labels, as_pct=False):
+    """[{label, value}] for a select_multiple's dummy columns, desc by count.
+
+    If as_pct=True, value is the % of respondents (rows) selecting each option.
+    """
     lmap = labels.get(base, {})
+    denom = len(frame) or 1
     out = []
     for code, lab in lmap.items():
         col = f"{base}_{code}"
         if col in frame:
             n = int((numcol(frame[col]) == 1).sum())
             if n:
-                out.append({"label": lab, "value": n})
+                val = round(100 * n / denom) if as_pct else n
+                out.append({"label": short(lab), "value": val})
     out.sort(key=lambda x: -x["value"])
     return out
 
@@ -353,9 +420,9 @@ def build():
 
         "portal": {
             "aware": dist(resp, "s1_1_portal_aware", labels),
-            "known": multi(resp, "s1_2_portal_known", labels),
+            "known": multi(resp, "s1_2_portal_known", labels, as_pct=True),
             "used": dist(resp, "s1_3_portal_used_12m", labels),
-            "nonuse": multi(resp, "s1_4_portal_nonuse_why", labels),
+            "nonuse": multi(resp, "s1_4_portal_nonuse_why", labels, as_pct=True),
             "help": dist(resp, "s1_5_portal_help_who", labels),
             "comfort": dist(resp, "s1_6_online_form_comfort", labels),
         },

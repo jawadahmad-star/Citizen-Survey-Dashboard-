@@ -214,7 +214,6 @@
       <button class="nav-tab" onclick="showPanel('rs',this)">🛰️ RS Technology</button>
       <button class="nav-tab" onclick="showPanel('wtp',this)">💰 Willingness to Pay</button>
       <button class="nav-tab" onclick="showPanel('loc',this)">🗺️ Locality Tracker</button>
-      <button class="nav-tab" onclick="showPanel('ops',this)">🏠 Property &amp; Field Ops</button>
     </nav>
   </div>
 </div>
@@ -290,8 +289,8 @@
       <div class="chart-card"><h3>Comfort with Online Forms</h3><div class="chart-desc">Self-rated comfort filling a form online</div><div class="chart-wrap"><canvas id="chartComfort"></canvas></div></div>
     </div>
     <div class="chart-grid cols-2">
-      <div class="chart-card"><h3>Government Services Known</h3><div class="chart-desc">Services respondents have heard of (multiple answers)</div><div class="chart-wrap tall"><canvas id="chartPortalKnown"></canvas></div></div>
-      <div class="chart-card"><h3>Why People Don't Use Portals</h3><div class="chart-desc">Main reasons for not using government apps / websites (multiple answers)</div><div class="chart-wrap tall"><canvas id="chartNonuse"></canvas></div></div>
+      <div class="chart-card"><h3>Government Services Known</h3><div class="chart-desc">% of respondents who have heard of each service (multiple answers allowed)</div><div class="chart-wrap tall"><canvas id="chartPortalKnown"></canvas></div></div>
+      <div class="chart-card"><h3>Why People Don't Use Portals</h3><div class="chart-desc">% of respondents citing each reason for not using government portals (multiple answers allowed)</div><div class="chart-wrap tall"><canvas id="chartNonuse"></canvas></div></div>
     </div>
     <div class="chart-grid cols-2">
       <div class="chart-card full"><h3>Who Would Help You Use a Portal?</h3><div class="chart-desc">If the respondent had to use a government portal tomorrow</div><div class="chart-wrap"><canvas id="chartHelp"></canvas></div></div>
@@ -463,37 +462,6 @@
       </table>
     </div>
     <p class="footnote">Targets = primary-attempt properties per locality in the sampling frame (2,100 total). Completion % = completed ÷ target. Localities appearing in field data but not in the frame are flagged with target 0. Sorted by completion by default.</p>
-  </div>
-
-  <!-- PROPERTY & FIELD OPS -->
-  <div class="panel" id="panel-ops">
-    <div class="section-header">
-      <div class="section-header-accent"></div>
-      <div>
-        <h2>Property Profile &amp; Field Operations</h2>
-        <p>The physical profile of surveyed properties — plot size, covered area, floors and visible assets — together with enumerator productivity, interview length and quality indicators from the enumerator observation module.</p>
-      </div>
-    </div>
-    <div class="kpi-grid" id="op-kpis"></div>
-    <div class="chart-grid cols-2">
-      <div class="chart-card"><h3>Completed Interviews by Enumerator</h3><div class="chart-desc">Field productivity — completed interviews per enumerator</div><div class="chart-wrap tall"><canvas id="chartEnum"></canvas></div></div>
-      <div class="chart-card"><h3>Interview Duration</h3><div class="chart-desc">Distribution of completed-interview length (minutes)</div><div class="chart-wrap tall"><canvas id="chartDur"></canvas></div></div>
-    </div>
-    <div class="chart-grid cols-3">
-      <div class="chart-card"><h3>Number of Floors</h3><div class="chart-desc">Floors counted at the property (ground = 1)</div><div class="chart-wrap"><canvas id="chartFloors"></canvas></div></div>
-      <div class="chart-card"><h3>Plot Size (Marla)</h3><div class="chart-desc">Land area of surveyed properties</div><div class="chart-wrap"><canvas id="chartMarla"></canvas></div></div>
-      <div class="chart-card"><h3>Covered Area (sq ft)</h3><div class="chart-desc">RS-measured covered area of surveyed properties</div><div class="chart-wrap"><canvas id="chartCovered"></canvas></div></div>
-    </div>
-    <div class="chart-grid cols-2">
-      <div class="chart-card"><h3>Visible Household Assets</h3><div class="chart-desc">% of properties where the enumerator observed each asset</div><div class="chart-wrap"><canvas id="chartAssets"></canvas></div></div>
-      <div class="chart-card"><h3>Enumerator Ratings of Respondent (1–5)</h3><div class="chart-desc">Average enumerator-observed rating on each dimension</div><div class="chart-wrap"><canvas id="chartObs"></canvas></div></div>
-    </div>
-    <div class="chart-grid cols-3">
-      <div class="chart-card"><h3>Wore Western Dress</h3><div class="chart-desc">Enumerator observation</div><div class="chart-wrap"><canvas id="chartDress"></canvas></div></div>
-      <div class="chart-card"><h3>Appeared Nervous</h3><div class="chart-desc">Enumerator observation</div><div class="chart-wrap"><canvas id="chartNervous"></canvas></div></div>
-      <div class="chart-card"><h3>Judged Entirely Truthful</h3><div class="chart-desc">Enumerator observation</div><div class="chart-wrap"><canvas id="chartTruthful"></canvas></div></div>
-    </div>
-    <p class="footnote">Observation module completed by enumerators after the interview. Durations under 5 minutes are excluded as timer glitches. Property measurements (covered area, storeys) come from the RS prefill attached to each sampled property.</p>
   </div>
 
 </div><!-- /main -->
@@ -712,8 +680,8 @@ function renderAll(){
   donutChart('chartPortalAware', D.portal.aware, [GREEN, RED, '#94a3b8', '#cbd5e1']);
   donutChart('chartPortalUsed', D.portal.used, [TEAL, RED, '#94a3b8', '#cbd5e1']);
   barChart('chartComfort', P(D.portal.comfort), AMBER, false, '%');
-  barChart('chartPortalKnown', D.portal.known, NAVY, true);
-  barChart('chartNonuse', D.portal.nonuse, RED, true);
+  barChart('chartPortalKnown', D.portal.known, NAVY, true, '%');
+  barChart('chartNonuse', D.portal.nonuse, RED, true, '%');
   barChart('chartHelp', P(D.portal.help), PURPLE, true, '%');
 
   // ---- E&T ----
@@ -794,23 +762,6 @@ function renderAll(){
 
   // ---- Locality tracker ----
   buildLocPanel();
-
-  // ---- Property & field ops ----
-  document.getElementById('op-kpis').innerHTML =
-    kpi('⏱️', m.median_duration, 'Median Duration (min)', 'Completed interviews', 'navy', 'navy') +
-    kpi('🧑‍💼', m.n_enums, 'Active Enumerators', (D.enums[0]? 'Top: '+D.enums[0].label+' ('+D.enums[0].value+')':''), 'up', 'teal') +
-    (D.prop.assets.length? kpi('❄️', D.prop.assets[0].value+'%', 'Homes with '+D.prop.assets[0].label, 'Enumerator-observed', 'neutral', 'amber') : '') +
-    kpi('🏢', topLabel(D.prop.floors), 'Most Common Height', topShare(P(D.prop.floors))+' of properties', 'navy', 'purple');
-  barChart('chartEnum', D.enums, NAVY, true);
-  barChart('chartDur', D.dur_hist, TEAL, false);
-  donutChart('chartFloors', D.prop.floors, [TEAL, NAVY, AMBER, PURPLE]);
-  barChart('chartMarla', D.prop.marla_bins, AMBER, false);
-  barChart('chartCovered', D.prop.covered_bins, PURPLE, false);
-  barChart('chartAssets', D.prop.assets, GREEN, false, '%');
-  barChart('chartObs', D.prop.obs_avgs, NAVY, false);
-  donutChart('chartDress', D.prop.dress, [NAVY, '#cbd5e1', '#94a3b8']);
-  donutChart('chartNervous', D.prop.nervous, [RED, GREEN, '#94a3b8']);
-  donutChart('chartTruthful', D.prop.truthful, [GREEN, RED, '#94a3b8']);
 
   animateKpis();
 }
