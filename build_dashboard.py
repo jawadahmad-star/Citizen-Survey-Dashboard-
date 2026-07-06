@@ -38,6 +38,15 @@ MISSING_CODES = {97, 98, 99, 666, 777, 888, 999}   # excluded from scale means
 SHORT_LABELS = {
     "Refused to answer": "Refused",
     "Don't know how it was decided": "Don't know",
+    # attempt disposition (survey_status)
+    "Partial Complete": "Partial",
+    "Refused because of time": "Refused: no time",
+    "Refused because of lack of interest": "Refused: no interest",
+    "Refused because of lack of trust": "Refused: no trust",
+    "Refused because of other reasons": "Refused: other",
+    "Unit was locked/empty": "Locked / empty",
+    "Decision maker not available": "Decision-maker away",
+    "Criteria not met": "Criteria not met",
     # digital access
     "ePay Punjab (online payments)": "ePay Punjab",
     "Punjab Land Records / Online Fard / Punjab-Zameen": "Punjab Land Records / Fard",
@@ -255,7 +264,7 @@ def build():
 
     slabs = lists.get("status_survey", {})
     sc = numcol(df["survey_status"]).dropna().astype(int).value_counts()
-    status_dist = [{"label": slabs.get(k, str(k)), "value": int(v)} for k, v in sc.items()]
+    status_dist = [{"label": short(slabs.get(k, str(k))), "value": int(v)} for k, v in sc.items()]
     status_dist.sort(key=lambda x: -x["value"])
 
     refused = int(numcol(df["survey_status"]).isin([3, 4, 5, 6]).sum())
