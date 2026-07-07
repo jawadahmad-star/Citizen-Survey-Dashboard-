@@ -250,10 +250,11 @@ def build():
         .reset_index()
     )
 
-    # completed joined to frame (for circle / treat cross-checks)
+    # completed joined to frame (for circle / land-size / treat cross-checks)
     comp["_rid"] = numcol(comp["resp_id"])
     pf_idx = pf.set_index("resp_id")
     comp["_circle"] = comp["_rid"].map(pf_idx["circle_name"])
+    comp["_land_bin"] = comp["_rid"].map(pf_idx["land_bin"])
 
     # ---- meta ----
     dates = sorted(d for d in comp["_fdate"].dropna().unique() if d and d != "NaT")
@@ -366,6 +367,24 @@ def build():
             loc_rows.append({"loc": loc, "circle": "—", "done": int(done), "target": 0,
                              "pct": 0, "status": "In Progress", "touched": True})
     loc_rows.sort(key=lambda x: -x["pct"])
+
+    # ---- land-size (marla) progress: target vs completed per land_bin ----
+    LAND_BIN_ORDER = ["<=5 marla", "5-10", "10-20", ">20 marla"]
+    LAND_BIN_LABELS = {"<=5 marla": "≤5 marla", "5-10": "5–10 marla",
+                       "10-20": "10–20 marla", ">20 marla": ">20 marla"}
+    land_tgt = samp.groupby("land_bin").size().to_dict()
+    land_done = comp.groupby("_land_bin").size().to_dict()
+    land_keys = LAND_BIN_ORDER + [k for k in land_tgt if k not in LAND_BIN_ORDER]
+    land_rows = []
+    for k in land_keys:
+        tgt = int(land_tgt.get(k, 0))
+        done = int(land_done.get(k, 0))
+        if not tgt and not done:
+            continue
+        pct = round(100 * done / tgt) if tgt else 0
+        status = "Completed" if tgt and done >= tgt else ("In Progress" if done else "Not Started")
+        land_rows.append({"bin": LAND_BIN_LABELS.get(k, str(k)), "done": done,
+                          "target": tgt, "pct": pct, "status": status})
 
     # ---- circle progress (top by completed) ----
     circ_tgt = samp.groupby("circle_name").size().to_dict()
@@ -498,6 +517,7 @@ def build():
             "distress": dist(comp, "s4t2_5_distress_observed", labels),
         },
         "loc_table": loc_rows,
+        "land_table": land_rows,
     }
     return D
 

@@ -130,6 +130,19 @@
     .badge-grey  { background:var(--n-100);     color:var(--n-400); }
     .badge-red   { background:var(--rs-red-light); color:var(--rs-red-dark); }
 
+    /* land-size (marla) progress cards */
+    .land-prog-head { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--rs-navy-soft); margin:26px 0 12px; }
+    .land-prog { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:6px; }
+    .land-card { background:white; border-radius:14px; padding:16px 18px; box-shadow:0 1px 4px rgba(45,52,80,.07),0 4px 16px rgba(45,52,80,.05); }
+    .land-card .lc-bin { font-size:13px; font-weight:700; color:var(--rs-navy); }
+    .land-card .lc-frac { margin-top:8px; font-size:20px; font-weight:800; color:var(--rs-navy); letter-spacing:-.3px; }
+    .land-card .lc-frac .lc-tgt { font-size:14px; font-weight:600; color:var(--n-400); }
+    .land-card .lc-track { height:8px; background:var(--n-100); border-radius:99px; overflow:hidden; margin:12px 0 8px; }
+    .land-card .lc-track > span { display:block; height:100%; border-radius:99px; }
+    .land-card .lc-foot { display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+    .land-card .lc-pct { font-weight:800; }
+    @media (max-width:900px) { .land-prog { grid-template-columns:repeat(2,1fr); } }
+
     @media (max-width:1000px) {
       .chart-grid.cols-2,.chart-grid.cols-3 { grid-template-columns:1fr; }
       .insight-row { grid-template-columns:1fr; }
@@ -433,6 +446,9 @@
       </div>
     </div>
     <div class="kpi-grid" id="lc-kpis"></div>
+    <div class="land-prog-head">🏠 Progress by Property Land Size (marla)</div>
+    <div class="land-prog" id="lc-land"></div>
+    <p class="footnote" style="margin-top:8px;margin-bottom:22px;">Each property in the sampling frame is binned by its recorded land area (marla). Target = sampled properties in that band; completed = interviews done in that band. Helps track whether smaller vs larger properties are being covered evenly.</p>
     <div class="mz-toolbar">
       <input type="text" id="lc-search" class="mz-search" placeholder="🔍  Search locality or circle…" oninput="renderLocTable()">
       <select id="lc-status" class="mz-filter" onchange="renderLocTable()">
@@ -785,8 +801,23 @@ function buildLocPanel(){
   document.querySelectorAll('#lc-table th').forEach(th=>{
     th.onclick=()=>{ const k=th.dataset.sort; if(lcSort.key===k) lcSort.dir*=-1; else {lcSort.key=k; lcSort.dir=(k==='loc'||k==='circle'||k==='status')?1:-1;} updateLcArrows(); renderLocTable(); };
   });
+  renderLandProg();
   updateLcArrows();
   renderLocTable();
+}
+function renderLandProg(){
+  const rows=DASHBOARD_DATA.land_table||[];
+  const el=document.getElementById('lc-land');
+  if(!el) return;
+  el.innerHTML = rows.map(r=>{
+    const pct=Math.min(r.pct,100), col=barColor(r.pct);
+    return `<div class="land-card">
+      <div class="lc-bin">${r.bin}</div>
+      <div class="lc-frac">${r.done.toLocaleString()} <span class="lc-tgt">/ ${r.target.toLocaleString()}</span></div>
+      <div class="lc-track"><span style="width:${pct}%;background:${col}"></span></div>
+      <div class="lc-foot"><span class="lc-pct" style="color:${col}">${r.pct}%</span>${statusBadge(r.status)}</div>
+    </div>`;
+  }).join('');
 }
 function updateLcArrows(){
   document.querySelectorAll('#lc-table th').forEach(th=>{
