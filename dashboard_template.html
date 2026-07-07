@@ -119,6 +119,7 @@
     .mz-table tbody tr:last-child td { border-bottom:none; }
     .mz-mauza { font-weight:600; color:var(--rs-navy); }
     .mz-tehsil { font-size:11px; color:var(--n-400); text-transform:uppercase; letter-spacing:.4px; }
+    .mz-land { display:inline-block; padding:3px 9px; border-radius:99px; font-size:11px; font-weight:600; background:var(--rs-navy-50); color:var(--rs-navy-soft); white-space:nowrap; }
     .mz-frac { font-weight:600; }
     .mz-frac .done { color:var(--rs-navy); } .mz-frac .sep { color:var(--n-400); } .mz-frac .tgt { color:var(--n-400); }
     .mz-bar { height:7px; width:90px; background:var(--n-100); border-radius:99px; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:8px; }
@@ -468,6 +469,7 @@
         <thead>
           <tr>
             <th data-sort="loc">Locality <span class="arrow"></span></th>
+            <th data-sort="land">Land Size <span class="arrow"></span></th>
             <th data-sort="circle">E&amp;T Circle <span class="arrow"></span></th>
             <th class="num" data-sort="done">Completed <span class="arrow"></span></th>
             <th class="num" data-sort="target">Sampled Target <span class="arrow"></span></th>
@@ -478,7 +480,7 @@
         <tbody id="lc-body"></tbody>
       </table>
     </div>
-    <p class="footnote">Targets = primary-attempt properties per locality in the sampling frame (2,100 total). Completion % = completed ÷ target. Localities appearing in field data but not in the frame are flagged with target 0. Sorted by completion by default.</p>
+    <p class="footnote">Each row is a locality × land-size band (property land area in marla). Targets = sampled properties in that band; completion % = completed ÷ target. Rows are grouped by locality (bands smallest-first) by default — click any column to re-sort, or use the Land Size filter to isolate one band. Localities in field data but not in the frame show target 0.</p>
   </div>
 
 </div><!-- /main -->
@@ -788,7 +790,7 @@ function topShare(arr){ const a=(arr||[]).filter(x=>x.label!=='No response'); if
 // ============================================================
 //  LOCALITY TABLE
 // ============================================================
-let lcSort = {key:'pct', dir:-1};
+let lcSort = {key:'loc', dir:1};
 function buildLocPanel(){
   const D=DASHBOARD_DATA, m=D.meta;
   document.getElementById('lc-kpis').innerHTML =
@@ -835,15 +837,26 @@ function statusBadge(s){
   return '<span class="badge badge-grey">○ Not Started</span>';
 }
 function barColor(p){ return p>=100?GREEN : p>=50?AMBER : p>0?RED : '#cbd5e1'; }
-// When a specific land size is selected, recompute completed/target/%/status
-// for that band using the per-locality land_bin breakdown.
-function landEffRow(r, lf){
-  if(lf==='all') return r;
-  const b=(r.by_land||{})[lf];
-  const done=b?b.done:0, target=b?b.target:0;
-  const pct=target?Math.round(100*done/target):0;
-  const status=(target&&done>=target)?'Completed':(done?'In Progress':'Not Started');
-  return Object.assign({}, r, {done, target, pct, status, touched:done>0});
+// Flatten the locality table into one row per (locality × land-size band),
+// so each land size shows its own completed / target / % / status.
+function locBandRows(){
+  const D=DASHBOARD_DATA, out=[];
+  D.loc_table.forEach(r=>{
+    const bl=r.by_land||{}, keys=Object.keys(bl);
+    if(!keys.length){
+      out.push({loc:r.loc, land:'—', circle:r.circle, done:r.done, target:r.target,
+                pct:r.pct, status:r.status, touched:r.touched});
+    } else {
+      keys.forEach(k=>{
+        const b=bl[k];
+        const pct=b.target?Math.round(100*b.done/b.target):0;
+        const status=(b.target&&b.done>=b.target)?'Completed':(b.done?'In Progress':'Not Started');
+        out.push({loc:r.loc, land:k, circle:r.circle, done:b.done, target:b.target,
+                  pct, status, touched:b.done>0});
+      });
+    }
+  });
+  return out;
 }
 function filteredLocRows(){
   const D=DASHBOARD_DATA;
@@ -851,18 +864,25 @@ function filteredLocRows(){
   const st=document.getElementById('lc-status').value;
   const ci=document.getElementById('lc-circle').value;
   const lf=document.getElementById('lc-land-filter').value;
-  let rows=D.loc_table.map(r=>landEffRow(r,lf)).filter(r=>{
-    const hay=(r.loc+r.circle).toUpperCase().replace(/\s/g,'');
+  let rows=locBandRows().filter(r=>{
+    const hay=(r.loc+r.circle+r.land).toUpperCase().replace(/\s/g,'');
     if(q && !hay.includes(q)) return false;
-    // when a land size is chosen, hide localities with no properties in that band
-    if(lf!=='all' && r.target===0 && r.done===0) return false;
+    if(lf!=='all' && r.land!==lf) return false;
     if(st==='started'){ if(!r.touched) return false; }
     else if(st!=='all' && r.status!==st) return false;
     if(ci!=='all' && r.circle!==ci) return false;
     return true;
   });
+  const landOrder=(D.land_table||[]).map(x=>x.bin);
   const k=lcSort.key, dir=lcSort.dir;
-  rows.sort((a,b)=>{ let x=a[k],y=b[k]; if(typeof x==='string'){return x.localeCompare(y)*dir;} return (x-y)*dir; });
+  rows.sort((a,b)=>{
+    let x=a[k], y=b[k], c;
+    c = (typeof x==='string') ? x.localeCompare(y)*dir : (x-y)*dir;
+    if(c!==0) return c;
+    // tie-break: keep a locality's land bands together, smallest first
+    if(a.loc!==b.loc) return a.loc.localeCompare(b.loc);
+    return landOrder.indexOf(a.land)-landOrder.indexOf(b.land);
+  });
   return rows;
 }
 function renderLocTable(){
@@ -873,6 +893,7 @@ function renderLocTable(){
     const pct=Math.min(r.pct,100);
     return `<tr>
       <td><span class="mz-mauza">${r.loc}</span></td>
+      <td><span class="mz-land">${r.land}</span></td>
       <td><span class="mz-tehsil">${r.circle}</span></td>
       <td class="num"><span class="mz-frac"><span class="done">${r.done}</span></span></td>
       <td class="num"><span class="mz-frac"><span class="tgt">${r.target}</span></span></td>
@@ -880,13 +901,13 @@ function renderLocTable(){
       <td>${statusBadge(r.status)}</td>
     </tr>`;
   }).join('');
-  document.getElementById('lc-count').textContent = rows.length + ' of ' + D.loc_table.length + ' localities';
+  document.getElementById('lc-count').textContent = rows.length + ' rows';
 }
 function exportLocCSV(){
   const rows=filteredLocRows();
   const esc = s => '"'+String(s).replace(/"/g,'""')+'"';
-  let csv='Locality,E&T Circle,Completed,Target,Completion %,Status\n';
-  rows.forEach(r=>{ csv+=[esc(r.loc),esc(r.circle),r.done,r.target,r.pct,esc(r.status)].join(',')+'\n'; });
+  let csv='Locality,Land Size,E&T Circle,Completed,Target,Completion %,Status\n';
+  rows.forEach(r=>{ csv+=[esc(r.loc),esc(r.land),esc(r.circle),r.done,r.target,r.pct,esc(r.status)].join(',')+'\n'; });
   const blob=new Blob(["﻿"+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
