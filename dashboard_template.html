@@ -459,6 +459,7 @@
         <option value="all">All localities</option>
       </select>
       <select id="lc-circle" class="mz-filter" onchange="renderLocTable()"></select>
+      <select id="lc-land-filter" class="mz-filter" onchange="renderLocTable()"></select>
       <button class="mz-export" onclick="exportLocCSV()">⬇ Export CSV</button>
       <span class="mz-count" id="lc-count"></span>
     </div>
@@ -798,6 +799,9 @@ function buildLocPanel(){
   const circles=[...new Set(D.loc_table.map(r=>r.circle))].filter(c=>c && c!=='—').sort();
   const sel=document.getElementById('lc-circle');
   sel.innerHTML='<option value="all">All circles</option>'+circles.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const lands=(D.land_table||[]).map(r=>r.bin);
+  const lsel=document.getElementById('lc-land-filter');
+  lsel.innerHTML='<option value="all">All land sizes</option>'+lands.map(t=>`<option value="${t}">${t}</option>`).join('');
   document.querySelectorAll('#lc-table th').forEach(th=>{
     th.onclick=()=>{ const k=th.dataset.sort; if(lcSort.key===k) lcSort.dir*=-1; else {lcSort.key=k; lcSort.dir=(k==='loc'||k==='circle'||k==='status')?1:-1;} updateLcArrows(); renderLocTable(); };
   });
@@ -831,14 +835,27 @@ function statusBadge(s){
   return '<span class="badge badge-grey">○ Not Started</span>';
 }
 function barColor(p){ return p>=100?GREEN : p>=50?AMBER : p>0?RED : '#cbd5e1'; }
+// When a specific land size is selected, recompute completed/target/%/status
+// for that band using the per-locality land_bin breakdown.
+function landEffRow(r, lf){
+  if(lf==='all') return r;
+  const b=(r.by_land||{})[lf];
+  const done=b?b.done:0, target=b?b.target:0;
+  const pct=target?Math.round(100*done/target):0;
+  const status=(target&&done>=target)?'Completed':(done?'In Progress':'Not Started');
+  return Object.assign({}, r, {done, target, pct, status, touched:done>0});
+}
 function filteredLocRows(){
   const D=DASHBOARD_DATA;
   const q=(document.getElementById('lc-search').value||'').toUpperCase().replace(/\s/g,'');
   const st=document.getElementById('lc-status').value;
   const ci=document.getElementById('lc-circle').value;
-  let rows=D.loc_table.filter(r=>{
+  const lf=document.getElementById('lc-land-filter').value;
+  let rows=D.loc_table.map(r=>landEffRow(r,lf)).filter(r=>{
     const hay=(r.loc+r.circle).toUpperCase().replace(/\s/g,'');
     if(q && !hay.includes(q)) return false;
+    // when a land size is chosen, hide localities with no properties in that band
+    if(lf!=='all' && r.target===0 && r.done===0) return false;
     if(st==='started'){ if(!r.touched) return false; }
     else if(st!=='all' && r.status!==st) return false;
     if(ci!=='all' && r.circle!==ci) return false;

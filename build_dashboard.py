@@ -351,8 +351,26 @@ def build():
     en = comp["enum_label"].fillna("Unknown").value_counts()
     enums = [{"label": k, "value": int(v)} for k, v in en.items()][:14]
 
-    # ---- locality table ----
+    # ---- land-size (marla) bins (shared by the table filter and the top cards) ----
+    LAND_BIN_ORDER = ["<=5 marla", "5-10", "10-20", ">20 marla"]
+    LAND_BIN_LABELS = {"<=5 marla": "≤5 marla", "5-10": "5–10 marla",
+                       "10-20": "10–20 marla", ">20 marla": ">20 marla"}
+
+    # ---- locality table (with per-land-size breakdown for the filter) ----
     done_by_loc = comp.groupby("locality_name").size().to_dict()
+    tgt_loc_land = samp.groupby(["locality_name", "land_bin"]).size()
+    done_loc_land = comp.groupby(["locality_name", "_land_bin"]).size()
+
+    def land_breakdown(loc):
+        """{land-size label: {done, target}} for one locality (only non-empty bins)."""
+        out = {}
+        for k in LAND_BIN_ORDER:
+            t = int(tgt_loc_land.get((loc, k), 0))
+            d = int(done_loc_land.get((loc, k), 0))
+            if t or d:
+                out[LAND_BIN_LABELS[k]] = {"done": d, "target": t}
+        return out
+
     loc_rows = []
     for _, r in frame_loc.iterrows():
         done = int(done_by_loc.get(r["locality_name"], 0))
@@ -360,18 +378,17 @@ def build():
         pct = round(100 * done / tgt) if tgt else 0
         status = "Completed" if tgt and done >= tgt else ("In Progress" if done else "Not Started")
         loc_rows.append({"loc": r["locality_name"], "circle": str(r["circle"]), "done": done,
-                         "target": tgt, "pct": pct, "status": status, "touched": done > 0})
+                         "target": tgt, "pct": pct, "status": status, "touched": done > 0,
+                         "by_land": land_breakdown(r["locality_name"])})
     known = {r["loc"] for r in loc_rows}
     for loc, done in done_by_loc.items():
         if loc not in known and isinstance(loc, str):
             loc_rows.append({"loc": loc, "circle": "—", "done": int(done), "target": 0,
-                             "pct": 0, "status": "In Progress", "touched": True})
+                             "pct": 0, "status": "In Progress", "touched": True,
+                             "by_land": land_breakdown(loc)})
     loc_rows.sort(key=lambda x: -x["pct"])
 
-    # ---- land-size (marla) progress: target vs completed per land_bin ----
-    LAND_BIN_ORDER = ["<=5 marla", "5-10", "10-20", ">20 marla"]
-    LAND_BIN_LABELS = {"<=5 marla": "≤5 marla", "5-10": "5–10 marla",
-                       "10-20": "10–20 marla", ">20 marla": ">20 marla"}
+    # ---- land-size (marla) progress: target vs completed per land_bin (top cards) ----
     land_tgt = samp.groupby("land_bin").size().to_dict()
     land_done = comp.groupby("_land_bin").size().to_dict()
     land_keys = LAND_BIN_ORDER + [k for k in land_tgt if k not in LAND_BIN_ORDER]
