@@ -573,6 +573,19 @@ function barChart(id, arr, color, horizontal, suffix){
                y:{ticks: horizontal?catTicks:valTicks, grid:{display:horizontal?false:true,color:GRID}, beginAtZero:true, ...(horizontal?{}:{grace:'12%'})}} }) });
 }
 
+function circleChart(id, arr){
+  const el=document.getElementById(id); if(!el || !arr || !arr.length) return;
+  new Chart(el,{type:'bar', data:{labels:arr.map(c=>c.label), datasets:[{data:arr.map(c=>c.done), backgroundColor:NAVY, borderRadius:6, maxBarThickness:30}]},
+    options:baseOpts({ indexAxis:'y',
+      layout:{padding:{top:6, right:58}},
+      plugins:{legend:{display:false},
+        datalabels:{display:true, anchor:'end', align:'right', clamp:true, clip:false, color:'#475569', font:{family:'Inter',size:11,weight:'700'},
+          formatter:(v,ctx)=>{ const c=arr[ctx.dataIndex]; return c.done+' / '+c.target; }},
+        tooltip:{callbacks:{label:ctx=>{ const c=arr[ctx.dataIndex]; return c.done+' of '+c.target+' completed ('+pctOf(c.done,c.target)+'%)'; }}}},
+      scales:{ x:{beginAtZero:true, grace:'16%', ticks:{font:{family:'Inter',size:11},color:'#475569'}, grid:{display:true,color:GRID}},
+               y:{ticks:{font:{family:'Inter',size:11},color:'#475569',autoSkip:false,maxRotation:0,minRotation:0,callback:function(v){return wrapTick(this.getLabelForValue(v));}}, grid:{display:false}}}})});
+}
+
 function donutChart(id, arr, colors){
   const el=document.getElementById(id); if(!el || !arr || !arr.length) return;
   new Chart(el,{type:'doughnut', data:{labels:L(arr), datasets:[{data:V(arr), backgroundColor:colors||PALETTE, borderWidth:2, borderColor:'#fff'}]},
@@ -686,8 +699,8 @@ function renderAll(){
   progressDonut('chartProgress', m.n_complete, m.total_target);
   donutChart('chartTreat', D.treat_dist, [NAVY, TEAL, PURPLE]);
   barChart('chartStatus', D.status_dist, RED, true);
-  // circle progress: bar of done with target in tooltip via label suffix
-  barChart('chartCircle', D.circle_prog.map(c=>({label:c.label+'  ('+c.done+'/'+c.target+')', value:c.done})), NAVY, true);
+  // circle progress: tick = circle name only (no wrap/overlap); done/target shown as datalabel at bar end
+  circleChart('chartCircle', D.circle_prog);
 
   // ---- Digital access ----
   document.getElementById('pt-kpis').innerHTML =
