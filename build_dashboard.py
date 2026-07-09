@@ -255,6 +255,7 @@ def build():
     pf_idx = pf.set_index("resp_id")
     comp["_circle"] = comp["_rid"].map(pf_idx["circle_name"])
     comp["_land_bin"] = comp["_rid"].map(pf_idx["land_bin"])
+    comp["_loc"] = comp["_rid"].map(pf_idx["locality_name"])   # frame locality (for the tracker)
 
     # ---- meta ----
     dates = sorted(d for d in comp["_fdate"].dropna().unique() if d and d != "NaT")
@@ -356,37 +357,47 @@ def build():
     LAND_BIN_LABELS = {"<=5 marla": "≤5 marla", "5-10": "5–10 marla",
                        "10-20": "10–20 marla", ">20 marla": ">20 marla"}
 
-    # ---- locality table (with per-land-size breakdown for the filter) ----
-    done_by_loc = comp.groupby("locality_name").size().to_dict()
-    tgt_loc_land = samp.groupby(["locality_name", "land_bin"]).size()
-    done_loc_land = comp.groupby(["locality_name", "_land_bin"]).size()
+    # ---- locality table: one row per (locality × E&T circle) ----
+    # A few localities (e.g. Allama Iqbal Town) span several circles, so we key
+    # rows on the (locality, circle) pair. Completed rows use the frame-mapped
+    # locality/circle/land (via resp_id) so they line up exactly with the frame.
+    frame_lc = (samp.groupby(["locality_name", "circle_name"]).size()
+                .reset_index(name="target"))
+    done_by_lc = comp.groupby(["_loc", "_circle"]).size().to_dict()
+    tgt_lc_land = samp.groupby(["locality_name", "circle_name", "land_bin"]).size()
+    done_lc_land = comp.groupby(["_loc", "_circle", "_land_bin"]).size()
 
-    def land_breakdown(loc):
-        """{land-size label: {done, target}} for one locality (only non-empty bins)."""
+    def land_breakdown(loc, circ):
+        """{land-size label: {done, target}} for one locality×circle (non-empty bins)."""
         out = {}
         for k in LAND_BIN_ORDER:
-            t = int(tgt_loc_land.get((loc, k), 0))
-            d = int(done_loc_land.get((loc, k), 0))
+            t = int(tgt_lc_land.get((loc, circ, k), 0))
+            d = int(done_lc_land.get((loc, circ, k), 0))
             if t or d:
                 out[LAND_BIN_LABELS[k]] = {"done": d, "target": t}
         return out
 
     loc_rows = []
-    for _, r in frame_loc.iterrows():
-        done = int(done_by_loc.get(r["locality_name"], 0))
+    for _, r in frame_lc.iterrows():
+        loc, circ = r["locality_name"], str(r["circle_name"])
+        done = int(done_by_lc.get((loc, circ), 0))
         tgt = int(r["target"])
         pct = round(100 * done / tgt) if tgt else 0
         status = "Completed" if tgt and done >= tgt else ("In Progress" if done else "Not Started")
-        loc_rows.append({"loc": r["locality_name"], "circle": str(r["circle"]), "done": done,
+        loc_rows.append({"loc": loc, "circle": circ, "done": done,
                          "target": tgt, "pct": pct, "status": status, "touched": done > 0,
-                         "by_land": land_breakdown(r["locality_name"])})
-    known = {r["loc"] for r in loc_rows}
-    for loc, done in done_by_loc.items():
-        if loc not in known and isinstance(loc, str):
-            loc_rows.append({"loc": loc, "circle": "—", "done": int(done), "target": 0,
-                             "pct": 0, "status": "In Progress", "touched": True,
-                             "by_land": land_breakdown(loc)})
+                         "by_land": land_breakdown(loc, circ)})
+    known = {(r["loc"], r["circle"]) for r in loc_rows}
+    for (loc, circ), done in done_by_lc.items():
+        if (loc, circ) not in known and isinstance(loc, str):
+            loc_rows.append({"loc": loc, "circle": str(circ) if isinstance(circ, str) else "—",
+                             "done": int(done), "target": 0, "pct": 0,
+                             "status": "In Progress", "touched": True,
+                             "by_land": land_breakdown(loc, circ)})
     loc_rows.sort(key=lambda x: -x["pct"])
+
+    # localities touched (locality-level, independent of the per-circle split)
+    n_loc_started = int(comp["_loc"].dropna().nunique())
 
     # ---- land-size (marla) progress: target vs completed per land_bin (top cards) ----
     land_tgt = samp.groupby("land_bin").size().to_dict()
@@ -430,7 +441,7 @@ def build():
             "median_duration": round(float(dur_min.median())) if len(dur_min) else 0,
             "n_enums": int(comp["enum_label"].nunique()),
             "n_localities_frame": int(len(frame_loc)),
-            "n_localities_started": int(sum(1 for r in loc_rows if r["touched"])),
+            "n_localities_started": n_loc_started,
             "n_circles_frame": int(samp["circle_name"].nunique()),
             "n_circles_started": int(len(circ)),
             "t1_done": int(treat_done.get("T1", 0)), "t1_target": int(treat_target.get("T1", 0)),
