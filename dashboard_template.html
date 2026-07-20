@@ -248,7 +248,7 @@
       <div class="section-header-accent"></div>
       <div>
         <h2>Survey at a Glance</h2>
-        <p>Real-time monitoring of the Citizen Property Tax &amp; RS Assessment Survey across Lahore. The study measures how property owners perceive the Excise &amp; Taxation Department, how much they trust satellite / remote-sensing (RS) based property valuation, and what they would pay for their own RS estimate — tracked against the 2,100-property sampling frame across E&amp;T circles and localities.</p>
+        <p>Real-time monitoring of the Citizen Property Tax &amp; RS Assessment Survey across Lahore. The study measures how property owners perceive the Excise &amp; Taxation Department, how much they trust satellite / remote-sensing (RS) based property valuation, and what they would pay for their own RS estimate — tracked against the <span id="fx-frame1">2,127</span>-property revised sampling frame across E&amp;T circles and localities.</p>
       </div>
     </div>
     <div class="kpi-grid" id="ov-kpis"></div>
@@ -263,7 +263,7 @@
     <div class="chart-grid cols-3">
       <div class="chart-card">
         <h3>Overall Progress vs Target</h3>
-        <div class="chart-desc">Completed interviews against the 2,100-property sampling target</div>
+        <div class="chart-desc">Completed interviews against the <span id="fx-frame2">2,127</span>-property sampling target</div>
         <div class="chart-wrap"><canvas id="chartProgress"></canvas></div>
       </div>
       <div class="chart-card">
@@ -284,7 +284,7 @@
         <div class="chart-wrap tall"><canvas id="chartCircle"></canvas></div>
       </div>
     </div>
-    <p class="footnote">Sampling frame: 2,100 primary-attempt properties drawn from the E&amp;T assessment rolls of Lahore District (T1 = 900, T2 = 900, Control = 300). Data collected via SurveyCTO digital CAPI with GPS capture at the property. Study design &amp; analysis by Research Solutions (M&amp;A Research Solutions LLC) | www.rs.org.pk</p>
+    <p class="footnote">Revised sampling frame: <span id="fx-frame3">2,127</span> properties drawn from the E&amp;T assessment rolls of Lahore District (T1 = <span id="fx-t1t">912</span>, T2 = <span id="fx-t2t">911</span>, Control = <span id="fx-ctrlt">304</span>). Data collected via SurveyCTO digital CAPI with GPS capture at the property. Study design &amp; analysis by Research Solutions (M&amp;A Research Solutions LLC) | www.rs.org.pk</p>
   </div>
 
   <!-- DIGITAL ACCESS -->
@@ -480,7 +480,7 @@
         <tbody id="lc-body"></tbody>
       </table>
     </div>
-    <p class="footnote">Each row is a locality × land-size band (property land area in marla). Targets = sampled properties in that band; completion % = completed ÷ target. Rows are grouped by locality (bands smallest-first) by default — click any column to re-sort, or use the Land Size filter to isolate one band. Localities in field data but not in the frame show target 0.</p>
+    <p class="footnote">Each row is a locality × land-size band (property land area in marla). Targets = sampled properties in that band; completion % = completed ÷ target. Rows are grouped by locality (bands smallest-first) by default — click any column to re-sort, or use the Land Size filter to isolate one band. By default only started localities are shown; switch the status filter to “All localities” to see every locality in the frame (not-yet-started ones show as Not Started).</p>
   </div>
 
 </div><!-- /main -->
@@ -680,6 +680,11 @@ function renderAll(){
   document.getElementById('meta-line').textContent = m.field_days + ' field day' + (m.field_days===1?'':'s') + ' · last ' + (m.last_date||'');
   document.getElementById('meta-pill').textContent = m.n_complete + ' Completed';
   document.getElementById('banner-pill').textContent = m.pct_complete + '% of target';
+
+  // keep the static frame copy in sync with the revised targets
+  const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  ['fx-frame1','fx-frame2','fx-frame3'].forEach(id => setTxt(id, m.total_target.toLocaleString()));
+  setTxt('fx-t1t', m.t1_target); setTxt('fx-t2t', m.t2_target); setTxt('fx-ctrlt', m.ctrl_target);
 
   // ---- Overview ----
   document.getElementById('ov-kpis').innerHTML =

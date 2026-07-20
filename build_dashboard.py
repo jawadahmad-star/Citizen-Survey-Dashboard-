@@ -18,8 +18,8 @@ sampling counts that used to be derived from rs_prefill.
 Daily usage:
     1. Drop the fresh export over
        "Citizen Property Tax & RS Assessment Survey (v25).dta"
-    2. Refresh target_locality_landbin_<date>.xls when a revised frame is issued
-       (update TARGET_PATH below to point at the newest file).
+    2. Drop the newest target_locality_landbin_<date>.xls/.xlsx into this folder
+       when a revised frame is issued — the newest one is picked up automatically.
     3. Run:  python build_dashboard.py     (or double-click update_dashboard.bat)
 """
 
@@ -34,10 +34,24 @@ import pandas as pd
 
 HERE = Path(__file__).parent
 DTA_PATH = HERE / "Citizen Property Tax & RS Assessment Survey (v25).dta"
-TARGET_PATH = HERE / "target_locality_landbin_20072026.xls"   # revised frame targets
 XLSFORM_PATH = HERE / "citizen_v25.xlsx"
 TEMPLATE_PATH = HERE / "dashboard_template.html"
 OUT_PATH = HERE / "index.html"
+
+
+def target_path():
+    """Newest target_locality_landbin_* frame file (any Excel extension).
+
+    The daily hand-off sometimes ships .xls, sometimes .xlsx — pick whichever
+    is newest so a changed extension never breaks the build."""
+    cands = sorted(
+        (p for p in HERE.glob("target_locality_landbin_*")
+         if p.suffix.lower() in (".xls", ".xlsx")),
+        key=lambda p: p.stat().st_mtime, reverse=True)
+    if not cands:
+        raise FileNotFoundError(
+            "No target_locality_landbin_*.xls/.xlsx file found in " + str(HERE))
+    return cands[0]
 
 MISSING_CODES = {97, 98, 99, 666, 777, 888, 999}   # excluded from scale means
 
@@ -153,7 +167,7 @@ def load_data():
     df = df.copy()  # de-fragment (425 cols) so later helper columns don't warn
 
     # Revised target frame: one row per (circle × locality × land_bin).
-    tg = pd.read_excel(TARGET_PATH, sheet_name=0)
+    tg = pd.read_excel(target_path(), sheet_name=0)
     for c in ("circle_name", "locality_name", "land_bin"):
         tg[c] = tg[c].astype(str).str.strip()
     tg["target"] = pd.to_numeric(tg["target"], errors="coerce").fillna(0).astype(int)
@@ -264,13 +278,12 @@ def build():
 
     # ---- revised target frame ----
     # Targets come from target_locality_landbin_<date>.xls at (circle × locality
-    # × land_bin) granularity. The roster lists every locality but only those
-    # with target>0 are in this wave; the rest (all zero, no completes) are
-    # dropped from the frame counts and tables.
+    # × land_bin) granularity. Frame counts use the FULL roster (199 localities,
+    # 53 E&T circles); localities with target=0 simply show as Not Started and
+    # are hidden by the tracker's default "started only" filter.
     total_target = int(tg["target"].sum())
-    active = tg[tg["target"] > 0]
-    n_localities_frame = int(active["locality_name"].nunique())
-    n_circles_frame = int(active["circle_name"].nunique())
+    n_localities_frame = int(tg["locality_name"].nunique())   # full roster (199)
+    n_circles_frame = int(tg["circle_name"].nunique())        # full roster (53)
 
     # arm targets: scale the RCT design to the revised total (largest-remainder)
     base = sum(DESIGN_TREAT.values())
@@ -389,7 +402,7 @@ def build():
     # A few localities (e.g. Allama Iqbal Town) span several circles, so we key
     # rows on the (locality, circle) pair. Completed rows use the frame-mapped
     # locality/circle/land (via resp_id) so they line up exactly with the frame.
-    frame_lc = (active.groupby(["locality_name", "circle_name"])["target"].sum()
+    frame_lc = (tg.groupby(["locality_name", "circle_name"])["target"].sum()
                 .reset_index())
     done_by_lc = comp.groupby(["_loc", "_circle"]).size().to_dict()
     tgt_lc_land = tg.groupby(["locality_name", "circle_name", "land_bin"])["target"].sum()
