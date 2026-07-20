@@ -4,11 +4,11 @@ REM  Citizen Property Tax & RS Assessment Survey (v25)
 REM  Daily dashboard update — Research Solutions
 REM
 REM  Steps:
-REM    1. Download the fresh SurveyCTO WIDE export and save it
-REM       over "Citizen Property Tax & RS Assessment Survey (v25)_WIDE.csv"
+REM    1. Save the fresh Stata export over
+REM       "Citizen Property Tax & RS Assessment Survey (v25).dta"
 REM       in this folder.
 REM    2. Double-click this file.
-REM  It rebuilds index.html and pushes it to GitHub Pages.
+REM  It reads the .dta, rebuilds index.html, and pushes it to GitHub Pages.
 REM ============================================================
 cd /d "%~dp0"
 

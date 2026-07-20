@@ -4,14 +4,14 @@ Citizen Property Tax & RS Assessment Survey (v25) — Dashboard Builder
 =====================================================================
 Research Solutions (M&A Research Solutions LLC)
 
-Reads the daily SurveyCTO WIDE export + the sampling frame (rs_prefill.xlsx)
+Reads the daily Stata export (.dta) + the sampling frame (rs_prefill.xlsx)
 + the XLSForm (citizen_v25.xlsx, for value labels), computes every aggregate
 the dashboard needs, and injects the JSON into dashboard_template.html to
 produce index.html (the file served on GitHub Pages).
 
 Daily usage:
     1. Drop the fresh export over
-       "Citizen Property Tax & RS Assessment Survey (v25)_WIDE.csv"
+       "Citizen Property Tax & RS Assessment Survey (v25).dta"
     2. Run:  python build_dashboard.py     (or double-click update_dashboard.bat)
 """
 
@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).parent
-CSV_PATH = HERE / "Citizen Property Tax & RS Assessment Survey (v25)_WIDE.csv"
+DTA_PATH = HERE / "Citizen Property Tax & RS Assessment Survey (v25).dta"
 PREFILL_PATH = HERE / "rs_prefill.xlsx"
 XLSFORM_PATH = HERE / "citizen_v25.xlsx"
 TEMPLATE_PATH = HERE / "dashboard_template.html"
@@ -134,8 +134,11 @@ def load_labels():
 
 
 def load_data():
-    df = pd.read_csv(CSV_PATH, dtype=str, low_memory=False)
+    # Stata export: read the raw numeric codes (convert_categoricals=False) so
+    # the downstream numcol() logic keeps working exactly as it did for the CSV.
+    df = pd.read_stata(DTA_PATH, convert_categoricals=False)
     df.columns = [c.strip() for c in df.columns]
+    df = df.copy()  # de-fragment (425 cols) so later helper columns don't warn
     pf = pd.read_excel(PREFILL_PATH, sheet_name=0)
     return df, pf
 
@@ -232,8 +235,10 @@ def build():
     labels, lists = load_labels()
     df, pf = load_data()
 
-    # field date = actual interview date (starttime), not server sync date
-    st = pd.to_datetime(df["starttime"], errors="coerce", format="mixed")
+    # field date = actual interview date (starttime), not server sync date.
+    # Stata delivers starttime as a datetime already; to_datetime is a no-op
+    # then, and still parses cleanly if a future export ships it as text.
+    st = pd.to_datetime(df["starttime"], errors="coerce")
     df["_fdate"] = st.dt.date.astype(str)
 
     df["_status"] = numcol(df["survey_status"])
