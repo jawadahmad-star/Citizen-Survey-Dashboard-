@@ -4,15 +4,23 @@ Citizen Property Tax & RS Assessment Survey (v25) — Dashboard Builder
 =====================================================================
 Research Solutions (M&A Research Solutions LLC)
 
-Reads the daily Stata export (.dta) + the sampling frame (rs_prefill.xlsx)
-+ the XLSForm (citizen_v25.xlsx, for value labels), computes every aggregate
-the dashboard needs, and injects the JSON into dashboard_template.html to
-produce index.html (the file served on GitHub Pages).
+Reads the daily Stata export (.dta) + the revised target frame
+(target_locality_landbin_20072026.xls) + the XLSForm (citizen_v25.xlsx, for
+value labels), computes every aggregate the dashboard needs, and injects the
+JSON into dashboard_template.html to produce index.html (served on GitHub Pages).
+
+Since 20 Jul 2026 the .dta carries the frame columns natively
+(circle_name / locality_name / land_bin / treatment) for every completed row,
+so the old resp_id → rs_prefill join is no longer needed. Targets come from the
+revised (circle × locality × land_bin) target file, which also supersedes the
+sampling counts that used to be derived from rs_prefill.
 
 Daily usage:
     1. Drop the fresh export over
        "Citizen Property Tax & RS Assessment Survey (v25).dta"
-    2. Run:  python build_dashboard.py     (or double-click update_dashboard.bat)
+    2. Refresh target_locality_landbin_<date>.xls when a revised frame is issued
+       (update TARGET_PATH below to point at the newest file).
+    3. Run:  python build_dashboard.py     (or double-click update_dashboard.bat)
 """
 
 import json
@@ -26,12 +34,16 @@ import pandas as pd
 
 HERE = Path(__file__).parent
 DTA_PATH = HERE / "Citizen Property Tax & RS Assessment Survey (v25).dta"
-PREFILL_PATH = HERE / "rs_prefill.xlsx"
+TARGET_PATH = HERE / "target_locality_landbin_20072026.xls"   # revised frame targets
 XLSFORM_PATH = HERE / "citizen_v25.xlsx"
 TEMPLATE_PATH = HERE / "dashboard_template.html"
 OUT_PATH = HERE / "index.html"
 
 MISSING_CODES = {97, 98, 99, 666, 777, 888, 999}   # excluded from scale means
+
+# RCT design allocation (base 2,100). Arm targets are scaled to the revised
+# total (largest-remainder) since the target file has no treatment dimension.
+DESIGN_TREAT = {"T1": 900, "T2": 900, "Control": 300}
 
 # Concise labels for charts — long survey wordings shortened so they render
 # fully on the axis without being clipped. Keyed by the exact English label.
@@ -139,8 +151,13 @@ def load_data():
     df = pd.read_stata(DTA_PATH, convert_categoricals=False)
     df.columns = [c.strip() for c in df.columns]
     df = df.copy()  # de-fragment (425 cols) so later helper columns don't warn
-    pf = pd.read_excel(PREFILL_PATH, sheet_name=0)
-    return df, pf
+
+    # Revised target frame: one row per (circle × locality × land_bin).
+    tg = pd.read_excel(TARGET_PATH, sheet_name=0)
+    for c in ("circle_name", "locality_name", "land_bin"):
+        tg[c] = tg[c].astype(str).str.strip()
+    tg["target"] = pd.to_numeric(tg["target"], errors="coerce").fillna(0).astype(int)
+    return df, tg
 
 
 # ----------------------------------------------------------------------
@@ -233,7 +250,7 @@ def top2_agree_pct(frame, col, top=(3, 4)):
 # ----------------------------------------------------------------------
 def build():
     labels, lists = load_labels()
-    df, pf = load_data()
+    df, tg = load_data()
 
     # field date = actual interview date (starttime), not server sync date.
     # Stata delivers starttime as a datetime already; to_datetime is a no-op
@@ -245,22 +262,28 @@ def build():
     comp = df[df["_status"] == 1].copy()              # completed interviews
     resp = df[numcol(df["s0_consent_begin"]) == 1].copy()   # consented → asked the questionnaire
 
-    # ---- sampling frame ----
-    samp = pf[pf["sampled"] == 1].copy()
-    total_target = int(len(samp))
-    treat_target = samp["treat"].value_counts().to_dict()
-    frame_loc = (
-        samp.groupby("locality_name")
-        .agg(target=("resp_id", "size"), circle=("circle_name", lambda s: s.mode().iat[0]))
-        .reset_index()
-    )
+    # ---- revised target frame ----
+    # Targets come from target_locality_landbin_<date>.xls at (circle × locality
+    # × land_bin) granularity. The roster lists every locality but only those
+    # with target>0 are in this wave; the rest (all zero, no completes) are
+    # dropped from the frame counts and tables.
+    total_target = int(tg["target"].sum())
+    active = tg[tg["target"] > 0]
+    n_localities_frame = int(active["locality_name"].nunique())
+    n_circles_frame = int(active["circle_name"].nunique())
 
-    # completed joined to frame (for circle / land-size / treat cross-checks)
-    comp["_rid"] = numcol(comp["resp_id"])
-    pf_idx = pf.set_index("resp_id")
-    comp["_circle"] = comp["_rid"].map(pf_idx["circle_name"])
-    comp["_land_bin"] = comp["_rid"].map(pf_idx["land_bin"])
-    comp["_loc"] = comp["_rid"].map(pf_idx["locality_name"])   # frame locality (for the tracker)
+    # arm targets: scale the RCT design to the revised total (largest-remainder)
+    base = sum(DESIGN_TREAT.values())
+    _raw = {k: total_target * v / base for k, v in DESIGN_TREAT.items()}
+    treat_target = {k: int(_raw[k]) for k in DESIGN_TREAT}
+    for k in sorted(DESIGN_TREAT, key=lambda k: -(_raw[k] - int(_raw[k])))[
+        : total_target - sum(treat_target.values())]:
+        treat_target[k] += 1
+
+    # completed rows carry the frame natively in the .dta (no resp_id join)
+    comp["_circle"] = comp["circle_name"].astype(str).str.strip()
+    comp["_land_bin"] = comp["land_bin"].astype(str).str.strip()
+    comp["_loc"] = comp["locality_name"].astype(str).str.strip()
 
     # ---- meta ----
     dates = sorted(d for d in comp["_fdate"].dropna().unique() if d and d != "NaT")
@@ -366,10 +389,10 @@ def build():
     # A few localities (e.g. Allama Iqbal Town) span several circles, so we key
     # rows on the (locality, circle) pair. Completed rows use the frame-mapped
     # locality/circle/land (via resp_id) so they line up exactly with the frame.
-    frame_lc = (samp.groupby(["locality_name", "circle_name"]).size()
-                .reset_index(name="target"))
+    frame_lc = (active.groupby(["locality_name", "circle_name"])["target"].sum()
+                .reset_index())
     done_by_lc = comp.groupby(["_loc", "_circle"]).size().to_dict()
-    tgt_lc_land = samp.groupby(["locality_name", "circle_name", "land_bin"]).size()
+    tgt_lc_land = tg.groupby(["locality_name", "circle_name", "land_bin"])["target"].sum()
     done_lc_land = comp.groupby(["_loc", "_circle", "_land_bin"]).size()
 
     def land_breakdown(loc, circ):
@@ -405,7 +428,7 @@ def build():
     n_loc_started = int(comp["_loc"].dropna().nunique())
 
     # ---- land-size (marla) progress: target vs completed per land_bin (top cards) ----
-    land_tgt = samp.groupby("land_bin").size().to_dict()
+    land_tgt = tg.groupby("land_bin")["target"].sum().to_dict()
     land_done = comp.groupby("_land_bin").size().to_dict()
     land_keys = LAND_BIN_ORDER + [k for k in land_tgt if k not in LAND_BIN_ORDER]
     land_rows = []
@@ -420,7 +443,7 @@ def build():
                           "target": tgt, "pct": pct, "status": status})
 
     # ---- circle progress (top by completed) ----
-    circ_tgt = samp.groupby("circle_name").size().to_dict()
+    circ_tgt = tg.groupby("circle_name")["target"].sum().to_dict()
     circ_done = comp.groupby("_circle").size().to_dict()
     circ = [{"label": c, "done": int(d), "target": int(circ_tgt.get(c, 0))}
             for c, d in circ_done.items() if isinstance(c, str)]
@@ -445,9 +468,9 @@ def build():
             "response_rate": round(100 * n_complete / n_sub) if n_sub else 0,
             "median_duration": round(float(dur_min.median())) if len(dur_min) else 0,
             "n_enums": int(comp["enum_label"].nunique()),
-            "n_localities_frame": int(len(frame_loc)),
+            "n_localities_frame": n_localities_frame,
             "n_localities_started": n_loc_started,
-            "n_circles_frame": int(samp["circle_name"].nunique()),
+            "n_circles_frame": n_circles_frame,
             "n_circles_started": int(len(circ)),
             "t1_done": int(treat_done.get("T1", 0)), "t1_target": int(treat_target.get("T1", 0)),
             "t2_done": int(treat_done.get("T2", 0)), "t2_target": int(treat_target.get("T2", 0)),
