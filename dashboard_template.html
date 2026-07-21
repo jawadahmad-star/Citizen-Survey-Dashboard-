@@ -74,8 +74,12 @@
     .chart-card.full { grid-column:1/-1; }
     .chart-card h3 { font-size:14.5px; font-weight:700; color:var(--rs-navy); margin-bottom:4px; padding-left:10px; border-left:3px solid var(--rs-red); }
     .chart-desc { font-size:12px; color:var(--n-600); margin:6px 0 18px 13px; line-height:1.5; }
-    .chart-wrap canvas { max-height:280px; }
-    .chart-wrap.tall canvas { max-height:360px; }
+    /* The wrapper must carry a real height: Chart.js runs with maintainAspectRatio:false,
+       so it sizes the canvas to its parent. A bare max-height left every bar/line chart
+       at the canvas default of 150px, which squashed the category axis. */
+    .chart-wrap { position:relative; height:280px; }
+    .chart-wrap.tall { height:360px; }
+    .chart-wrap canvas { max-width:100%; }
 
     .insight-box { border-radius:12px; padding:16px 20px; margin-bottom:20px; border-left:4px solid; font-size:13.5px; line-height:1.65; }
     .insight-box.primary { background:var(--rs-red-light); border-color:var(--rs-red); color:#6B0A12; }
@@ -280,7 +284,7 @@
     <div class="chart-grid cols-2">
       <div class="chart-card full">
         <h3>Completed Interviews by E&amp;T Circle</h3>
-        <div class="chart-desc">Top Excise &amp; Taxation circles by completed interviews (completed / circle target)</div>
+        <div class="chart-desc">Top Excise &amp; Taxation circles by completed interviews. The navy bar is what is done; the grey track runs to that circle&rsquo;s sampling target, so the gap is the shortfall still to collect.</div>
         <div class="chart-wrap tall"><canvas id="chartCircle"></canvas></div>
       </div>
     </div>
@@ -522,11 +526,31 @@ function checkAuth() {
 }
 try { if (sessionStorage.getItem('ptax_auth')==='1') window.addEventListener('DOMContentLoaded', unlock); } catch(e){}
 
+// Every chart is built during renderAll(), while all panels except Overview are still
+// display:none — so those canvases get measured at zero and stay collapsed. Re-measure
+// a panel's charts the first time it is actually shown.
+function resizeChartsIn(root) {
+  if (!root || !window.Chart || !Chart.instances) return;
+  Object.values(Chart.instances).forEach(c => {
+    if (!root.contains(c.canvas)) return;
+    // A chart built inside a hidden panel is left with its intro animation still
+    // running, and Chart.js defers resize() while an animation runs (_resizeBeforeDraw),
+    // so the canvas would stay stuck at 0x0. Stop the animation first.
+    c.stop();
+    c.resize();
+    c.update('none');
+  });
+}
+
 function showPanel(id, btn) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
-  document.getElementById('panel-' + id).classList.add('active');
+  const panel = document.getElementById('panel-' + id);
+  panel.classList.add('active');
   btn.classList.add('active');
+  // Synchronous, not rAF: the panel is already display:block here, and rAF never fires
+  // in a background tab — which would leave the charts collapsed until the next click.
+  resizeChartsIn(panel);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -573,17 +597,50 @@ function barChart(id, arr, color, horizontal, suffix){
                y:{ticks: horizontal?catTicks:valTicks, grid:{display:horizontal?false:true,color:GRID}, beginAtZero:true, ...(horizontal?{}:{grace:'12%'})}} }) });
 }
 
+// Horizontal progress-vs-target chart: a navy "completed" segment sitting inside a
+// light track that runs to the circle's target, so shortfall is visible per circle.
 function circleChart(id, arr){
   const el=document.getElementById(id); if(!el || !arr || !arr.length) return;
-  new Chart(el,{type:'bar', data:{labels:arr.map(c=>c.label), datasets:[{data:arr.map(c=>c.done), backgroundColor:NAVY, borderRadius:6, maxBarThickness:30}]},
+  const rows = arr.map(c=>({label:c.label, done:c.done,
+                            target:Math.max(c.target, c.done),   // never draw a negative remainder
+                            pct:pctOf(c.done, c.target)}));
+  // Give every circle its own comfortable row, then size the wrapper to match. Without
+  // this the 12 category labels share 150px and overprint each other.
+  const ROW = 34;
+  el.parentElement.style.height = (rows.length*ROW + 78) + 'px';
+  const TRACK = '#E4E7EF';
+  const radius = (side) => (ctx) => {
+    const r = rows[ctx.dataIndex], gap = r.target - r.done;
+    if (side==='done')   return gap<=0 ? 5 : {topLeft:5, bottomLeft:5, topRight:0, bottomRight:0};
+    return r.done<=0 ? 5 : {topLeft:0, bottomLeft:0, topRight:5, bottomRight:5};
+  };
+  new Chart(el,{type:'bar',
+    data:{labels:rows.map(r=>r.label), datasets:[
+      {label:'Completed', data:rows.map(r=>r.done), backgroundColor:NAVY,
+       borderRadius:radius('done'), borderSkipped:false, stack:'circle', maxBarThickness:18},
+      {label:'Remaining to target', data:rows.map(r=>r.target-r.done), backgroundColor:TRACK,
+       borderRadius:radius('gap'), borderSkipped:false, stack:'circle', maxBarThickness:18}
+    ]},
     options:baseOpts({ indexAxis:'y',
-      layout:{padding:{top:6, right:58}},
-      plugins:{legend:{display:false},
-        datalabels:{display:true, anchor:'end', align:'right', clamp:true, clip:false, color:'#475569', font:{family:'Inter',size:11,weight:'700'},
-          formatter:(v,ctx)=>{ const c=arr[ctx.dataIndex]; return c.done+' / '+c.target; }},
-        tooltip:{callbacks:{label:ctx=>{ const c=arr[ctx.dataIndex]; return c.done+' of '+c.target+' completed ('+pctOf(c.done,c.target)+'%)'; }}}},
-      scales:{ x:{beginAtZero:true, grace:'16%', ticks:{font:{family:'Inter',size:11},color:'#475569'}, grid:{display:true,color:GRID}},
-               y:{ticks:{font:{family:'Inter',size:11},color:'#475569',autoSkip:false,maxRotation:0,minRotation:0,callback:function(v){return wrapTick(this.getLabelForValue(v));}}, grid:{display:false}}}})});
+      layout:{padding:{top:2, right:104, bottom:2}},
+      plugins:{
+        legend:{position:'top', align:'end', labels:{font:FONT, color:'#475569', boxWidth:11, boxHeight:11,
+                usePointStyle:true, pointStyle:'rectRounded', padding:16}},
+        // One label per row, parked past the end of the full track.
+        datalabels:{display:ctx=>ctx.datasetIndex===1, anchor:'end', align:'right', offset:8,
+          clamp:true, clip:false, color:'#334155', font:{family:'Inter',size:11,weight:'700'},
+          formatter:(v,ctx)=>{ const r=rows[ctx.dataIndex]; return r.done+' / '+r.target+'  ·  '+r.pct+'%'; }},
+        tooltip:{mode:'index', intersect:false, callbacks:{
+          title:items=>items[0].label,
+          label:ctx=>{ const r=rows[ctx.dataIndex];
+            return ctx.datasetIndex===0 ? 'Completed: '+r.done+' of '+r.target+' ('+r.pct+'%)'
+                                        : 'Remaining: '+(r.target-r.done); }}}},
+      scales:{ x:{stacked:true, beginAtZero:true, ticks:{font:{family:'Inter',size:11},color:'#64748b',padding:4},
+                  grid:{display:true,color:GRID,drawTicks:false}, border:{display:false}},
+               y:{stacked:true, grid:{display:false}, border:{display:false},
+                  ticks:{font:{family:'Inter',size:12,weight:'600'},color:'#334155',padding:10,
+                         autoSkip:false, maxRotation:0, minRotation:0, crossAlign:'far',
+                         callback:function(v){return wrapTick(this.getLabelForValue(v),22);}}}}})});
 }
 
 function donutChart(id, arr, colors){
