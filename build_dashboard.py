@@ -276,6 +276,12 @@ def build():
     comp = df[df["_status"] == 1].copy()              # completed interviews
     resp = df[numcol(df["s0_consent_begin"]) == 1].copy()   # consented → asked the questionnaire
 
+    # A handful of completed interviews carry a blank treatment string (no arm
+    # written back by the CAPI). No script was delivered in those cases, so they
+    # belong with Control rather than sitting in an unlabelled fourth bucket.
+    comp["treatment"] = comp["treatment"].astype(str).str.strip()
+    comp.loc[comp["treatment"].isin(["", "nan", "None"]), "treatment"] = "Control"
+
     # ---- revised target frame ----
     # Targets come from target_locality_landbin_<date>.xls at (circle × locality
     # × land_bin) granularity. Frame counts use the FULL roster (199 localities,
@@ -311,6 +317,10 @@ def build():
     status_dist.sort(key=lambda x: -x["value"])
 
     refused = int(numcol(df["survey_status"]).isin([3, 4, 5, 6]).sum())
+    # Everything that is neither a completion nor a refusal is a revisit case
+    # (appointment booked, decision-maker away) — it explains why attempts minus
+    # refusals is larger than the completed count.
+    pending = n_sub - n_complete - refused
 
     treat_done = comp["treatment"].value_counts().to_dict()
 
@@ -475,7 +485,7 @@ def build():
             "n_submissions": n_sub,
             "n_consented": int(len(resp)),
             "n_complete": n_complete,
-            "n_refused": refused,
+            "n_refused": refused, "n_pending": int(pending),
             "total_target": total_target,
             "pct_complete": round(100 * n_complete / total_target, 1) if total_target else 0,
             "response_rate": round(100 * n_complete / n_sub) if n_sub else 0,

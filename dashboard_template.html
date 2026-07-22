@@ -755,7 +755,9 @@ function renderAll(){
     callout('teal','🅰️','Arm T1 — RS-Info-Only', m.t1_done+' of '+m.t1_target+' completed ('+pctOf(m.t1_done,m.t1_target)+'%).') +
     callout('purple','🅱️','Arm T2 — RS-Info + Own-Property', m.t2_done+' of '+m.t2_target+' completed ('+pctOf(m.t2_done,m.t2_target)+'%).') +
     callout('navy','⚪','Control Arm', m.ctrl_done+' of '+m.ctrl_target+' completed ('+pctOf(m.ctrl_done,m.ctrl_target)+'%).') +
-    callout('amber','📉','Refusals', m.n_refused+' of '+m.n_submissions+' attempts refused ('+pctOf(m.n_refused,m.n_submissions)+'%) — see disposition chart.');
+    callout('amber','📉','Refusals', m.n_refused+' of '+m.n_submissions+' attempts refused ('+pctOf(m.n_refused,m.n_submissions)+'%). The remaining '+
+      (m.n_submissions-m.n_refused).toLocaleString()+' = '+m.n_complete.toLocaleString()+' completed + '+m.n_pending+
+      ' pending revisit (appointment / decision-maker away) — see disposition chart.');
 
   lineChart('chartDaily', D.daily);
   progressDonut('chartProgress', m.n_complete, m.total_target);
