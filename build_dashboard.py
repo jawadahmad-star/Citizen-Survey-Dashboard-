@@ -159,17 +159,37 @@ def load_labels():
     return qmap, lists
 
 
+# Some land_bin values reach the CAPI export date-mangled: a spreadsheet on the
+# way in read "5-10" and "10-20" as dates and wrote them back as "10-May" /
+# "20-Oct". The text bins ("<=5 marla", ">20 marla") survive because they cannot
+# be date-parsed. Left unfixed these rows silently vanish from every land-size
+# aggregate, so the marla cards under-count completions.
+LAND_BIN_FIXES = {
+    "10-May": "5-10", "5-Oct": "5-10", "May-10": "5-10", "Oct-5": "5-10",
+    "20-Oct": "10-20", "Oct-20": "10-20",
+}
+
+
+def clean_land_bin(s):
+    """Canonical land_bin text, undoing spreadsheet date-mangling."""
+    s = s.astype(str).str.strip()
+    return s.replace(LAND_BIN_FIXES)
+
+
 def load_data():
     # Stata export: read the raw numeric codes (convert_categoricals=False) so
     # the downstream numcol() logic keeps working exactly as it did for the CSV.
     df = pd.read_stata(DTA_PATH, convert_categoricals=False)
     df.columns = [c.strip() for c in df.columns]
     df = df.copy()  # de-fragment (425 cols) so later helper columns don't warn
+    if "land_bin" in df:
+        df["land_bin"] = clean_land_bin(df["land_bin"])
 
     # Revised target frame: one row per (circle × locality × land_bin).
     tg = pd.read_excel(target_path(), sheet_name=0)
     for c in ("circle_name", "locality_name", "land_bin"):
         tg[c] = tg[c].astype(str).str.strip()
+    tg["land_bin"] = clean_land_bin(tg["land_bin"])
     tg["target"] = pd.to_numeric(tg["target"], errors="coerce").fillna(0).astype(int)
     return df, tg
 
@@ -407,6 +427,12 @@ def build():
     LAND_BIN_ORDER = ["<=5 marla", "5-10", "10-20", ">20 marla"]
     LAND_BIN_LABELS = {"<=5 marla": "≤5 marla", "5-10": "5–10 marla",
                        "10-20": "10–20 marla", ">20 marla": ">20 marla"}
+    # Known bins first, then anything unrecognised that still carries a target or
+    # a completion — so a stray value is visible instead of dropping out of the
+    # totals (see LAND_BIN_FIXES).
+    _extra = ((set(tg["land_bin"]) | set(comp["_land_bin"]))
+              - set(LAND_BIN_ORDER) - {"nan", "None", ""})
+    land_keys = LAND_BIN_ORDER + sorted(_extra)
 
     # ---- locality table: one row per (locality × E&T circle) ----
     # A few localities (e.g. Allama Iqbal Town) span several circles, so we key
@@ -421,11 +447,11 @@ def build():
     def land_breakdown(loc, circ):
         """{land-size label: {done, target}} for one locality×circle (non-empty bins)."""
         out = {}
-        for k in LAND_BIN_ORDER:
+        for k in land_keys:
             t = int(tgt_lc_land.get((loc, circ, k), 0))
             d = int(done_lc_land.get((loc, circ, k), 0))
             if t or d:
-                out[LAND_BIN_LABELS[k]] = {"done": d, "target": t}
+                out[LAND_BIN_LABELS.get(k, k)] = {"done": d, "target": t}
         return out
 
     loc_rows = []
@@ -453,7 +479,6 @@ def build():
     # ---- land-size (marla) progress: target vs completed per land_bin (top cards) ----
     land_tgt = tg.groupby("land_bin")["target"].sum().to_dict()
     land_done = comp.groupby("_land_bin").size().to_dict()
-    land_keys = LAND_BIN_ORDER + [k for k in land_tgt if k not in LAND_BIN_ORDER]
     land_rows = []
     for k in land_keys:
         tgt = int(land_tgt.get(k, 0))
